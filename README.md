@@ -2,11 +2,11 @@
 
 Atari-System-1-compatible FPGA core for Analogue Pocket.
 
-Based on the FPGA Atari System 1 core by d18c7db, ported from the [MiSTer version](https://github.com/MiSTer-devel/Arcade-Atari-system1_MiSTer).
+Based on the FPGA Atari System 1 core by d18c7db (Alex), ported from the [MiSTer version](https://github.com/MiSTer-devel/Arcade-Atari-system1_MiSTer).
 
 ## Compatibility
 
-Supports all five games that run on the Atari System 1 hardware:
+Supports all five Atari System 1 games that run on the original FPGA core:
 
 * Indiana Jones and the Temple of Doom
 * Marble Madness
@@ -60,6 +60,8 @@ Note that generating the `.rom` format binaries used by this core is a bit more 
 First, you must run the associated per-game patching script to build intermediate zip files, containing assets from the base from the required ROMs corresponding to the files found in the most recent MAME release. These scripts pad the necessary roms to the required sizes, and place all dependencies in a single archive.
 
 Then, these intermediate files can be processed using mra-tool with the provided `.mra` files to generate the correct `.rom` files accepted by the core.  
+
+Note: these scripts have been tested on Linux; your mileage may vary on other targets.
 
 Note: the `.mra` files provided are heaviliy modified from the original versions in MiSTeR due to the limitations of mra-tool (necessitating the rom pre-patching scripts). The original `.mra` files will not work for this core.
 

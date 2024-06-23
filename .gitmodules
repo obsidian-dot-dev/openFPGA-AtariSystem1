@@ -1,0 +1,6 @@
+[submodule "external/Arcade-Atari-system1_MiSTer"]
+	path = external/Arcade-Atari-system1_MiSTer
+	url = https://github.com/obsidian-dot-dev/Arcade-Atari-system1_MiSTer
+[submodule "external/jt51"]
+	path = external/jt51
+	url = https://github.com/obsidian-dot-dev/jt51

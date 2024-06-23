@@ -1,0 +1,33 @@
+{
+	"interact":{
+		"magic": "APF_VER_1",
+		"variables": [	
+			{
+				"name": "Analog Sensitivity",
+				"id": 2,
+				"type": "list",
+				"enabled": true,
+				"persist": true,
+				"address": "0x90000000",
+				"writeonly": true,
+				"defaultval": 2,
+				"mask": "0xFFFFFFFC",
+				"options": [
+				  {
+					"value": 3,
+					"name": "Low"
+				  },
+				  {
+					"value": 2,
+					"name": "Medium"
+				  },
+				  {
+					"value": 1,
+					"name": "High"
+				  }   
+				]
+			}
+		],
+		"messages": []
+	}
+}

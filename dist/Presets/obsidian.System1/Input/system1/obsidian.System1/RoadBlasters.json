@@ -1,0 +1,47 @@
+{
+	"input":{
+		"magic": "APF_VER_1",
+		"controllers": [
+			{
+				"type": "default",
+				"mappings": [
+					{
+						"id": 0,
+						"name": "Accelerate",
+						"key": "pad_btn_a"
+					},
+					{
+						"id": 1,
+						"name": "Fire",
+						"key": "pad_btn_b"
+					},
+					{
+						"id": 2,
+						"name": "Fire (alt)",
+						"key": "pad_trig_r2"
+					},
+					{
+						"id": 3,
+						"name": "Fire (alt2)",
+						"key": "pad_trig_l2"
+					},
+					{
+						"id": 4,
+						"name": "Special Weapon",
+						"key": "pad_btn_y"
+					},
+					{
+						"id": 5,
+						"name": "Special Weapon (alt)",
+						"key": "pad_trig_r"
+					},
+					{
+						"id": 6,
+						"name": "Special Weapon (alt2)",
+						"key": "pad_trig_l"
+					}
+				]
+			}
+		]
+	}
+}

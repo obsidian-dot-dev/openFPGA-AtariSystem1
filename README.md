@@ -67,6 +67,17 @@ Note: the `.mra` files provided are heaviliy modified from the original versions
 
 ## History
 
+v0.9.1
+* Major refactoring to fix graphical bugs on newer pocekts.
+* * Added SDRAM timing constraints.
+* * Configured SDRAM I/O for fast input mode.
+* * Switch to integer PLL structure, with dedicated PLL for SDRAM clock.
+* * Integrated agg23's SDRAM controller.
+* * Use SDRAM Controller's clock generation instead of driving separately via PLL.
+* * Updated SDRAM CAS latency to CAS3 (datasheet says to use CAS3 beyond 85MHz)
+* * Use BRAM for 64K of gfx rom, allowing us to avoid quad-word SDRAM reads. 
+* Restore "Reset" and "Service Mode" interact options for games with analog controls.
+
 v0.9.0
 * Initial Release.
 
@@ -79,11 +90,14 @@ Please see the headers and license files for the licensing terms of the individu
 ## Attribution
 
 ```
-Original Gauntlet FPGA-compatible core by d18c7db (Alex)
+Original Atari System-1 FPGA-compatible core by d18c7db (Alex)
 https://github.com/d18c7db/atari_system1_fpga
 ---
 # JT51
 YM2151 clone in verilog. FPGA proven.
 (c) Jose Tejada 2016. Twitter: @topapate
 (https://github.com/jotego/jt51)
+---
+sdram-controller by agg23
+https://github.com/agg23/sdram-controller
 ```

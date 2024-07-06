@@ -277,8 +277,6 @@ mf_ddio_bidir_12 isclk(
     .padio ( scal_clk )
 );
 
-
-
 // controller data (pad) controller.
     wire    [15:0]  cont1_key;
     wire    [15:0]  cont2_key;

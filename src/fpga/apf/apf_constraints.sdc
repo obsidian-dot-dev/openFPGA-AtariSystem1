@@ -15,6 +15,6 @@ derive_pll_clocks
 # io constraints go here
 # 
 
-
 # load in user constraints 
 read_sdc "core/core_constraints.sdc"
+read_sdc "core/sdram.sdc"

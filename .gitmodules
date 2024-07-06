@@ -4,3 +4,6 @@
 [submodule "external/jt51"]
 	path = external/jt51
 	url = https://github.com/obsidian-dot-dev/jt51
+[submodule "external/sdram-controller"]
+	path = external/sdram-controller
+	url = https://github.com/obsidian-dot-dev/sdram-controller

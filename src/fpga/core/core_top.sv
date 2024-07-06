@@ -334,8 +334,8 @@ end
     
 // bridge host commands
 // synchronous to clk_74a
-    wire            status_boot_done = pll_core_locked; 
-    wire            status_setup_done = pll_core_locked; // rising edge triggers a target command
+    wire            status_boot_done = pll_core_locked & pll_sdram_locked; 
+    wire            status_setup_done = pll_core_locked & pll_sdram_locked; // rising edge triggers a target command
     wire            status_running = reset_n; // we are running as soon as reset_n goes high
 
     wire            dataslot_requestread;
@@ -441,15 +441,24 @@ parameter [2:0] GAME_ID_PETER_PACK_RAT	 = 2;
 parameter [2:0] GAME_ID_ROAD_BLASTERS    = 3;
 parameter [2:0] GAME_ID_ROAD_RUNNER      = 4;
 
+reg [2:0] game_id_u;
 reg [2:0] game_id;
 reg [1:0] analog_speed = 2'b10;
 reg service_mode;
+
+synch_3 #(
+    .WIDTH(3)
+) game_id_s (
+    game_id_u,
+    game_id,
+    clk_sys
+);
 
 always @(posedge clk_74a) begin
   if(bridge_wr) begin
     casex(bridge_addr)
        32'h80000000: begin 
-			game_id	<= bridge_wr_data[2:0];  
+			game_id_u	<= bridge_wr_data[2:0];  
 	   end
 	   32'h90000000: begin 
 			analog_speed <= bridge_wr_data[1:0];
@@ -477,14 +486,22 @@ synch_3 OSD_S (osnotify_inmenu, osnotify_inmenu_s, clk_sys);
 ///////////////////////////////////////////////
 
 reg         ioctl_download = 0;
+reg         ioctl_download_u = 0;
 wire        ioctl_wr;
 wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
 
 always @(posedge clk_74a) begin
-    if (dataslot_requestwrite)     ioctl_download <= 1;
-    else if (dataslot_allcomplete) ioctl_download <= 0;
+    if (dataslot_requestwrite)     ioctl_download_u <= 1;
+    else if (dataslot_allcomplete) ioctl_download_u <= 0;
 end
+
+
+synch_3 ioctl_dl_sync (
+    ioctl_download_u,
+    ioctl_download,
+    clk_sys
+);
 
 data_loader #(
     .ADDRESS_MASK_UPPER_4(0),
@@ -530,66 +547,89 @@ always @(posedge clk_14) begin
 end
 
 
-wire [22:0] sdram_addr;
-reg  [22:0] sdram_wr_addr;
-reg  [63:0] sdram_data = 64'b0;
+wire [24:0] sdram_addr;
+reg  [15:0] sdram_data = 16'b0;
 reg         sdram_we = 1'b0;
 wire 	      sdram_ready;
 wire			sdram_available;
 
-// Synchronize the loading of the sdram on each QWORD...
-reg sdram_queued_write;
-reg [63:0] sdram_queued_data;
-reg [22:0] sdram_queued_addr;
 
-// SDRAM Loading circuit.
+// Synchronize the loading of the sdram on each WORD
 always @(posedge clk_sys)
 begin
 	sdram_we <= 1'b0;
-	// When we're reading byte 8 of a QWORD, queue the current data and address.
-	if (ioctl_download && v_wr && ioctl_addr[2:0] == 3'b111) begin		
-		sdram_queued_data <= {acc_bytes,ioctl_dout};
-		sdram_queued_addr <= {1'b0,ioctl_addr[24:3]};
-		sdram_queued_write <= 1'b1;
-	end
-	// If SDRAM is ready, and we have a queued data QWORD, latched the queued
-	// data and start the write via sdram_we.
-	if (sdram_ready && sdram_queued_write) begin
-		sdram_queued_write <= 1'b0;		
-		sdram_data <= sdram_queued_data;	
-		sdram_wr_addr <= sdram_queued_addr;
+	if (ioctl_download && v_wr && ioctl_addr[0]) begin		
+		sdram_data <= {acc_bytes[7:0],ioctl_dout};
 		sdram_we <= 1'b1;
 	end
 end
 
-sdram #(.fCK_Mhz(93.06817)) sdram
+
+reg clk14_last;
+reg sd_do_read;
+reg last_read_acked = 1'b1;
+
+reg [5:0] recover_cycles;
+
+always @(posedge clk_sys)
+begin
+	sd_do_read <= 1'b0;
+	if (~ioctl_download && reset_n) begin
+		if (clk14_last == 1'b0 && clk_14 == 1'b1) begin
+			if (last_read_acked == 1'b1 || recover_cycles == 6'b111111) begin
+				sd_do_read <= 1'b1;
+				last_read_acked <= 1'b0;		
+				recover_cycles <= 6'b000000;
+			end		
+			else begin
+			  // HACK: If we missed 64-clocks, then try to recover... 
+			  recover_cycles <= recover_cycles + 1;
+			end
+		end
+			
+		if (sdram_ready || sdram_available) begin
+			last_read_acked <= 1'b1;
+		end
+	end
+		
+	clk14_last <= clk_14;
+end
+
+wire [31:0] sd_read_data_raw;
+sdram #(
+	.CLOCK_SPEED_MHZ(93.06817),
+	.BURST_LENGTH(2),
+	.WRITE_BURST(0),
+	.CAS_LATENCY(3)	
+) sdram
 (
-	.I_RST(~pll_core_locked),
-	.I_CLK(clk_sys),
-
-	// controller interface
-	.I_ADDR(sdram_addr),
-	.I_DATA(sdram_data),
-	.I_WE(sdram_we),
-	.O_RDY(sdram_ready),
-	.O_DATA(slv_VDATA),
-
-	// SDRAM interface
+	.clk(clk_93),
+	.reset(~pll_core_locked),
+	// .init_complete(),
+	.p0_addr(sdram_addr),
+	.p0_data(sdram_data),
+	.p0_byte_en(2'b11),
+	.p0_q(sd_read_data_raw),
+	.p0_wr_req(sdram_we),
+	.p0_rd_req(sd_do_read),
+	.p0_available(sdram_available),
+	.p0_ready(sdram_ready),
+	
 	.SDRAM_DQ(dram_dq),
 	.SDRAM_A(dram_a),
+	.SDRAM_DQM(dram_dqm),
 	.SDRAM_BA(dram_ba),
-	.SDRAM_DQML(dram_dqm[0]),
-	.SDRAM_DQMH(dram_dqm[1]),
-	//.SDRAM_CLK(),
-	.SDRAM_CKE(dram_cke),
-	//.SDRAM_nCS(SDRAM_nCS),
+	// .SDRAM_nCS()
+	.SDRAM_nWE(dram_we_n),
 	.SDRAM_nRAS(dram_ras_n),
 	.SDRAM_nCAS(dram_cas_n),
-	.SDRAM_nWE(dram_we_n)
+	.SDRAM_CKE(dram_cke),
+	.SDRAM_CLK(dram_clk)
 );
 
+
 rom_storage rom_storage (
-  .wr_en(sram_wr_en_latched), 	 
+  .wr_en(sram_wr_en_latched), 	  
   
   .addr(sram_addr), 		 
   .din(sram_write_data), 		 
@@ -607,8 +647,7 @@ rom_storage rom_storage (
 
 reg  [55:0] acc_bytes = 0;
 wire [18:0] slv_VADDR;
-wire [63:0] slv_VDATA;
-
+reg [31:0] slv_VDATA;
 // the order in which the files are listed in the .mra file determines the order in which they appear here on the HPS bus
 // some files are interleaved as DWORD, some are interleaved as WORD and some are not interleaved and appear as BYTE
 // acc_bytes collects previous bytes so that when a WORD or DWORD is complete it is written to the RAM as appropriate
@@ -616,11 +655,19 @@ always @(posedge clk_sys)
 	if (ioctl_wr && ioctl_download )
 		acc_bytes<={acc_bytes[47:0],ioctl_dout}; // accumulate previous bytes
 
-// We write WORDs and read QUAD-WORDs
-assign sdram_addr = ioctl_download ? sdram_wr_addr : {4'd0, slv_VADDR};
+
+// We write DWORDs and read DWORDs
+reg [63:0] slv_VDATA_s;
+// Synchronize address (in) and read-data (out)
+always @(posedge clk_sys)
+begin
+	slv_VDATA_s <= {sd_read_data_raw[15:0], sd_read_data_raw[31:16], vrom_byte5, vrom_byte6, 16'hffff};
+end
+
+assign sdram_addr = ioctl_download?{1'b0,ioctl_addr[24:1]}:{4'd0, slv_VADDR, 2'd00};
 
 wire sl_wr_SROM0, sl_wr_SROM1, sl_wr_SROM2;
-wire sl_wr_ROM0, sl_wr_ROM1, sl_wr_ROM2, sl_wr_ROM5, sl_wr_ROM6, sl_wr_ROM7;
+wire sl_wr_ROM0, sl_wr_ROM7;
 wire sl_wr_2B, sl_wr_5A , sl_wr_7A, sl_wr_SLAP, sl_MA18n, sl_wr_ep1, sl_wr_ep2;
 
 wire [15:1] slv_MADEC;
@@ -690,15 +737,15 @@ assign v_wr = (ioctl_wr && ioctl_addr[24:22]==3'h0); // 0x80000 x8
 // 0x400000 - 0x407fff
 assign sl_wr_ROM0    = (ioctl_wr && ioctl_addr[24:15]==10'h80   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x4000 x2
 // 0x410000 - 0x41ffff
-assign sl_wr_ROM1    = (ioctl_wr && ioctl_addr[24:16]== 9'h41   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
+// assign sl_wr_ROM1    = (ioctl_wr && ioctl_addr[24:16]== 9'h41   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
 // 0x420000 - 0x42ffff
-assign sl_wr_ROM2    = (ioctl_wr && ioctl_addr[24:16]== 9'h42   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
+// assign sl_wr_ROM2    = (ioctl_wr && ioctl_addr[24:16]== 9'h42   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
 // 0x430000 - 0x437fff - remapped to ROM7
 //assign sl_wr_ROM3  = (ioctl_wr && ioctl_download && ioctl_addr[24:15]==10'h86   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x4000 x2
 // 0x450000 - 0x45ffff
-assign sl_wr_ROM5    = (ioctl_wr && ioctl_addr[24:16]== 9'h45   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
+// assign sl_wr_ROM5    = (ioctl_wr && ioctl_addr[24:16]== 9'h45   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
 // 0x460000 - 0x46ffff
-assign sl_wr_ROM6    = (ioctl_wr && ioctl_addr[24:16]== 9'h46   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
+// assign sl_wr_ROM6    = (ioctl_wr && ioctl_addr[24:16]== 9'h46   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
 // 0x470000 - 0x47ffff
 assign sl_wr_ROM7    = (ioctl_wr && ioctl_addr[24:16]== 9'h47   && ioctl_addr[0]==1'b1) ? 1'b1 : 1'b0; // 0x8000 x2
 // 0x480000 - 0x487fff
@@ -739,6 +786,134 @@ assign slv_SDATA =
 	(~slv_SROMn[1])?slv_SROM1:
 	(~slv_SROMn[2])?slv_SROM2:
 	8'h0;
+
+	
+// Additional BRAMs allocated to store "non-FF" video ROM data that
+// would was previously loaded into the high-DWORD of SDRAM. 
+// Only Marble Madness and RoadBlasters make use of the high-DWORD,
+// for a grand total of 64KB. Use BRAM to avoid having to go to 
+// Quad-word bursts on SDRAM, which is marginal on some pockets.
+
+reg [14:0] vrom1_wr_addr;
+wire [14:0] vrom1_rd_addr;	
+	
+reg [7:0] vrom1_wr_data;
+wire [7:0] vrom1_rd_data;
+
+reg vrom1_wr_en;
+
+dpram #(15, 8) vrom1
+( 
+  .clock_a(clk_sys),   .enable_a(),   .wren_a(vrom1_wr_en),   .address_a(vrom1_wr_addr),   .data_a(vrom1_wr_data),   .q_a(),
+  .clock_b(clk_sys),   .enable_b(),   .wren_b(),   			  .address_b(vrom1_rd_addr),   .data_b(),   			 .q_b(vrom1_rd_data)
+);
+
+reg [14:0] vrom2_wr_addr;
+wire [14:0] vrom2_rd_addr;	
+	
+reg [7:0] vrom2_wr_data;
+wire [7:0] vrom2_rd_data;
+
+reg vrom2_wr_en;
+
+dpram #(15, 8) vrom2
+( 
+  .clock_a(clk_sys),   .enable_a(),   .wren_a(vrom2_wr_en),   .address_a(vrom2_wr_addr),   .data_a(vrom2_wr_data),   .q_a(),
+  .clock_b(clk_sys),   .enable_b(),   .wren_b(), 			  .address_b(vrom2_rd_addr),   .data_b(), 				 .q_b(vrom2_rd_data)
+);	
+
+// Logic for loading VROM data into extra BRAMs at boot, for games
+// that use it.
+always @(posedge clk_sys) 
+begin
+	if (game_id == GAME_ID_MARBLE_MADNESS) begin
+		// Treat as one contiguous 64K x 8 region.
+		if (ioctl_wr && ioctl_addr[24:18] == 7'b0000010) begin
+			vrom1_wr_en <= 1'b1;
+			if (ioctl_addr[2:0] == 3'b111) begin
+				vrom1_wr_addr <= ioctl_addr[17:3];
+				vrom1_wr_data <= acc_bytes[23:16];
+			end
+		end
+		else begin				
+			vrom1_wr_en <= 1'b0;
+		end
+		
+		if (ioctl_wr && ioctl_addr[24:18] == 7'b0000011) begin
+			vrom2_wr_en <= 1'b1;
+			if (ioctl_addr[2:0] == 3'b111) begin
+				vrom2_wr_addr <= ioctl_addr[17:3];
+				vrom2_wr_data <= acc_bytes[23:16];
+			end
+		end
+		else begin 
+			vrom2_wr_en <= 1'b0;
+		end
+	end
+	else if (game_id == GAME_ID_ROAD_BLASTERS) begin
+		// Treat as a 32K x 16 region.
+		if (ioctl_wr && ioctl_addr[24:18] == 7'b0000010) begin
+			vrom1_wr_en <= 1'b1;
+			vrom2_wr_en <= 1'b1;
+
+			if (ioctl_addr[2:0] == 3'b111) begin
+				vrom1_wr_addr <= ioctl_addr[17:3];
+				vrom1_wr_data <= acc_bytes[23:16];
+				
+				vrom2_wr_addr <= ioctl_addr[17:3];
+				vrom2_wr_data <= acc_bytes[15:8];
+			end
+		end
+		else begin
+			vrom1_wr_en <= 1'b0;
+			vrom2_wr_en <= 1'b0;
+		end
+	end
+end
+
+reg [7:0] vrom_byte5;
+reg [7:0] vrom_byte6;
+
+// Additional VROM read circuit:
+// - Marble Madness and RoadBlasters use a max of 5 or 6 VROM planes,
+//   and all others use a maximum of 4 VROM planes.
+// - Given these only represent an extra 64KB of space, we map that 
+//   into BRAM instead of SDRAM to avoid the extra complexity of
+//   storing/reading the planes as quad-words. 
+// This circuit maps the data stored in BRAM to the VDATA register for
+// the two games that need them.
+always @(posedge clk_sys) begin
+	vrom_byte5 <= 8'hff;
+	vrom_byte6 <= 8'hff;
+
+	// PP PR00 0000 0000 0000
+	// Where PPP == ROM bank
+	//         R == MSB of bank - used for bank-select 
+
+	if (game_id == GAME_ID_MARBLE_MADNESS) begin
+		// Marble Madness uses the 2 x 32K VROMs as a single
+		// contiguous 64K ROM.
+		if (slv_VADDR[18:15] == 4'b0010) begin
+			vrom1_rd_addr <= slv_VADDR[14:0];
+			vrom_byte5 <= vrom1_rd_data;
+		end
+		else if (slv_VADDR[18:15] == 4'b0011) begin
+			vrom2_rd_addr <= slv_VADDR[14:0];
+			vrom_byte5 <= vrom2_rd_data;
+		end
+	end
+	else if (game_id == GAME_ID_ROAD_BLASTERS) begin
+		// RoadBlasters Uses 2 x 32K VROMs as a 32K x 16 bit 
+		// rom.
+		if (slv_VADDR[18:15] == 4'b0010) begin			
+			vrom1_rd_addr <= slv_VADDR[14:0];
+			vrom2_rd_addr <= slv_VADDR[14:0];
+
+			vrom_byte5 <= vrom1_rd_data;
+			vrom_byte6 <= vrom2_rd_data;
+		end
+	end
+end
 
 // 32 M10K blocks
 // ROM0 BIOS 0x000000, 0x4000
@@ -1220,7 +1395,7 @@ FPGA_ATARISYS1 atarisys1
 
 	// video ROMs
 	.O_VADDR     (slv_VADDR),
-	.I_VDATA     (slv_VDATA)
+	.I_VDATA     (slv_VDATA_s)
 );
 	 
 
@@ -1228,25 +1403,45 @@ FPGA_ATARISYS1 atarisys1
 // Clocks
 ///////////////////////////////////////////////
 
+// "Intermediate" clock used to enable us to use an integer PLL for every other clock.
+wire    pll_bridge_locked;
+wire 	clk_root;
+mf_pllbridge mp0 (
+    .refclk         ( clk_74a ),
+    .rst            ( 0 ),
+    .outclk_0       ( clk_root ),
+    .locked         ( pll_bridge_locked )
+);
+
 wire    clk_core_7;
 wire    clk_core_7_90deg;
 wire    clk_sys;  
-wire 	  clk_93;	
+wire 	clk_93;	
 wire    clk_14;
 wire    pll_core_locked;
+
 assign clk_sys = clk_93;
-
 mf_pllbase mp1 (
-    .refclk         ( clk_74a ),
-    .rst            ( 0 ),
+    .refclk         ( clk_root ),
+    .rst            ( ~pll_bridge_locked ),
 
-	 .outclk_4		  ( dram_clk ),
-    .outclk_3	     ( clk_93 ), // 180 degrees
     .outclk_2       ( clk_core_7_90deg ),
-	 .outclk_1       ( clk_core_7 ),
+	.outclk_1       ( clk_core_7 ),
     .outclk_0       ( clk_14 ),
 
     .locked         ( pll_core_locked )
+);
+
+
+wire    pll_sdram_locked;
+mf_pllsdram mp2 (
+    .refclk         ( clk_root ),
+    .rst            ( ~pll_bridge_locked ),
+
+	// .outclk_1	  	( dram_clk),
+    .outclk_0	  	( clk_93 ),
+
+	.locked         ( pll_sdram_locked )
 );
 
 endmodule

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<simPackage>
+ <file path="mf_pllsdram_sim/mf_pllsdram.vo" type="VERILOG" />
+ <topLevel name="mf_pllsdram" />
+ <deviceFamily name="cyclonev" />
+</simPackage>

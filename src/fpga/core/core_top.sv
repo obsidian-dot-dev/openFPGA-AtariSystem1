@@ -444,6 +444,8 @@ parameter [2:0] GAME_ID_ROAD_RUNNER      = 4;
 reg [2:0] game_id_u;
 reg [2:0] game_id;
 reg [1:0] analog_speed = 2'b10;
+reg [1:0] analog_speed_1;
+reg [1:0] analog_speed_2;
 reg service_mode;
 
 synch_3 #(
@@ -1041,134 +1043,150 @@ reg analog_stick2_detected;
 
 always @(posedge clk_sys) begin
 
-   analog_stick1_detected <= cont1_joy[15:0] != 0;
-   analog_stick2_detected <= cont2_joy[15:0] != 0;
+   analog_stick1_detected <= cont1_joy_s[15:0] != 0;
+   analog_stick2_detected <= cont2_joy_s[15:0] != 0;
 
 	if (game_id == GAME_ID_MARBLE_MADNESS)
 	begin
-		wheel_mode = 0;
+		wheel_mode <= 0;
 		// NC NC NC Action Action
-		switches = ({3'b111, ~(joy[4]), ~(joy[5])});
+		switches <= ({3'b111, ~(joy[4]), ~(joy[5])});
 		// Directional analog type control from trackball which appears to be mounted with a 45 degree clockwise rotation
 		// so U is UL, D is DR, L is LD and R is RU
 
+		// Special condiiton -- user holds "Y" to speed up marble to "fast" speed.
+		if (joy[7] == 1'b1) begin
+			analog_speed_1 <= 2'b01;
+		end
+		else begin
+			analog_speed_1 <= analog_speed;
+		end
+		
 		if (!analog_stick1_detected || (joy[3:0] != 4'b0000)) begin
 			// Digital controls
-			analog_0[15:8] = joy[0] ? 8'h80 : joy[1] ? 8'h7F : 8'h00;
-			analog_0[7:0] =  joy[2] ? 8'h80 : joy[3] ? 8'h7F : 8'h00;
+			analog_0[15:8] <= joy[0] ? 8'h80 : joy[1] ? 8'h7F : 8'h00;
+			analog_0[7:0] <=  joy[2] ? 8'h80 : joy[3] ? 8'h7F : 8'h00;
 		end
 		else if (analog_stick1_detected) begin
 			// Analog controls w/P1 left stick
-			analog_0[15:8] = cont1_joy[15:8] + 8'h80;
-			analog_0[7:0]  = cont1_joy[7:0] + 8'h80;
+			analog_0[15:8] <= cont1_joy_s[15:8] + 8'h80;
+			analog_0[7:0]  <= cont1_joy_s[7:0] + 8'h80;
 		end
 		else begin
-			analog_0 = 16'b0;
+			analog_0 <= 16'b0;
 		end
 
+		// Special condiiton -- user holds "Y" to speed up marble to "fast" speed.
+		if (joy2[7] == 1'b1) begin
+			analog_speed_2 <= 2'b01;
+		end
+		else begin
+			analog_speed_2 <= analog_speed;
+		end
+		
 		if (!analog_stick2_detected || (joy2[3:0] != 4'b0000)) begin
 			// Digital controls
-			analog_1[15:8] = joy2[0] ? 8'h80 : joy2[1] ? 8'h7F : 8'h00;
-			analog_1[7:0] =  joy2[2] ? 8'h80 : joy2[3] ? 8'h7F : 8'h00;
+			analog_1[15:8] <= joy2[0] ? 8'h80 : joy2[1] ? 8'h7F : 8'h00;
+			analog_1[7:0] <=  joy2[2] ? 8'h80 : joy2[3] ? 8'h7F : 8'h00;
 		end		
 		else if (analog_stick2_detected) begin
 			// Analog controls w/P2 left stick
-			analog_1[15:8] = cont2_joy[15:8] + 8'h80;
-			analog_1[7:0]  = cont2_joy[7:0] + 8'h80;
+			analog_1[15:8] <= cont2_joy_s[15:8] + 8'h80;
+			analog_1[7:0]  <= cont2_joy_s[7:0] + 8'h80;
 		end
 		else begin
-			analog_1 = 16'b0;
+			analog_1 <= 16'b0;
 		end
 	end
-	
-	if (game_id == GAME_ID_TEMPLE_OF_DOOM)
+	else if (game_id == GAME_ID_TEMPLE_OF_DOOM)
 	begin
 		// direction control inputs
-		inputs =
+		inputs <=
 		// for Indy (105) shift them by one (000UDLR0) else default to (0000UDLR)
 		({3'b0, joy[0],joy[1], joy[2],joy[3], 1'b0});
 		// NC NC NC Whip Whip
-		switches = ({3'b111, ~(joy[4]), ~(joy[5])}); // "left" whip, "right" whip.
+		switches <= ({3'b111, ~(joy[4]), ~(joy[5])}); // "left" whip, "right" whip.
 		// Directional on/off switch type control
-		adc_data = inputs[adc_addr]?8'hff:8'h80;
+		adc_data <= inputs[adc_addr]?8'hff:8'h80;
 	end
 	else if (game_id == GAME_ID_PETER_PACK_RAT)
 	begin
 		// direction control inputs
-		inputs =
+		inputs <=
 		({4'b0,  joy[0],joy[1], joy[2],joy[3] });
 		// NC NC Jump NC Throw
-		switches = ({2'b11, ~(joy[5]), 1'b1, ~(joy[4])});
+		switches <= ({2'b11, ~(joy[5]), 1'b1, ~(joy[4])});
 		// Directional on/off switch type control
-		adc_data = inputs[adc_addr]?8'hff:8'h80;
+		adc_data <= inputs[adc_addr]?8'hff:8'h80;
 	end
 	else if (game_id == GAME_ID_ROAD_RUNNER)
 	begin
-		adc_data = 8'h80; // default ADC value
+		adc_data <= 8'h80; // default ADC value
 		// direction control inputs
-		inputs =
+		inputs <=
 		({4'b0,  joy[0],joy[1], joy[2],joy[3] });
 		// NC NC NC Action Action
-		switches = ({3'b111, ~(joy[5]), ~(joy[4])});
+		switches <= ({3'b111, ~(joy[5]), ~(joy[4])});
 
 		// Directional analog type control from joystick
 		if (adc_addr==3'd0) begin
 			if (inputs[0]) begin
-				adc_data = 8'h00; // R
+				adc_data <= 8'h00; // R
 			end
 			else if (inputs[1]) begin
-				adc_data = 8'hFF; // L
+				adc_data <= 8'hFF; // L
 			end
 			else if (analog_stick1_detected) begin
-				adc_data = 8'hFF - cont1_joy[7:0];
+				adc_data <= 8'hFF - cont1_joy_s[7:0];
 			end
 		end
 		else if (adc_addr==3'd7) begin
 			if (inputs[2]) begin
-				adc_data = 8'hFF; // D
+				adc_data <= 8'hFF; // D
 			end
 			else if (inputs[3]) begin
-				adc_data = 8'h00; // U
+				adc_data <= 8'h00; // U
 			end
 			else if (analog_stick1_detected) begin
-				adc_data = cont1_joy[15:8];
+				adc_data <= cont1_joy_s[15:8];
 			end			
 		end 
 		else begin
-			adc_data = 8'h80;
+			adc_data <= 8'h80;
 		end
 	end
 	else if (game_id == GAME_ID_ROAD_BLASTERS)
 	begin
-		wheel_mode = 1;
+		wheel_mode <= 1;
 		// NC NC NC Action Action
-		switches = ({3'b111, ~(joy[5] || joy[11] || joy[10]), ~(joy[7] || joy[9] || joy[8])}); // regular fire = b or r2 or L2, special fire = y or r1 or l1
-		if (adc_addr==3'd3) begin
-			if (!analog_stick1_detected || joy[4] == 1'b0) begin
-				adc_data = joy[4] ? 8'hFF : 8'h00;	// accelerate = a
+		switches <= ({3'b111, ~(joy[5] || joy[11] || joy[10]), ~(joy[7] || joy[9] || joy[8])}); // regular fire = b or r2 or L2, special fire = y or r1 or l1
+		if (adc_addr == 3'd3) begin
+			if (joy[4]) begin
+				adc_data <= joy[4] ? 8'hFF : 8'h00;	// accelerate = a
 			end
-			else if (analog_stick1_detected && !cont1_joy[15]) begin
-				adc_data = 8'hFF - {cont1_joy[14:8], 1'b1}; // 0xFF == up, 0x00 == center.
+			else if (analog_stick1_detected && !cont1_joy_s[15]) begin
+				adc_data <= 8'hFF - {cont1_joy_s[14:8], 1'b1}; // 0xFF == up, 0x00 == center.
 			end
 			else begin
-				adc_data = 8'h00;
+				adc_data <= 8'h00;	// accelerate = a
 			end
 		end
 		else begin
-			adc_data = 0;
+			adc_data <= 0;
 		end
 		
 		// analog_0/1 are represented as *signed* int8 values.
 		// 15:8 == v, 7:0 == h
-		analog_0[15:8] = 0;
-		if (!analog_stick1_detected || (joy[3:2] != 2'b00)) begin			
-			analog_0[7:0] = joy[2] ? 8'h80 : joy[3] ? 8'h7F : 8'h00;
-		end 
-		else if (analog_stick1_detected) begin
-			analog_0[7:0] = cont1_joy[7:0] + 8'h80;
+		analog_0[15:8] <= 0;
+		
+		if (analog_stick1_detected) begin
+			analog_0[7:0] <= cont1_joy_s[7:0] + 8'h80;
 		end
+		else if (!analog_stick1_detected || (joy[3:2] != 2'b00)) begin			
+			analog_0[7:0] <= joy[2] ? 8'h80 : joy[3] ? 8'h7F : 8'h00;
+		end 
 		else begin
-			analog_0[7:0] = 8'h00;
+			analog_0[7:0] <= 8'h00;
 		end
 
 	end
@@ -1183,7 +1201,7 @@ quad quad_p1
 	.mode       (wheel_mode), // 1 = wheel, 0 = joy/mouse
 	.joy        (analog_0),
 	.mouse      (25'b0),
-	.speed      (analog_speed), // Slow (00 = fastest, 11 = slowest)
+	.speed      (analog_speed_1), // Slow (00 = fastest, 11 = slowest)
 	.XA         (dirs[0]),
 	.XB         (clks[0]),
 	.YA         (dirs[1]),
@@ -1197,7 +1215,7 @@ quad quad_p2
 	.mode       (1'b0),
 	.joy        (analog_1),
 	.mouse      (25'b0),
-	.speed      (analog_speed),
+	.speed      (analog_speed_2),
 	.XA         (dirs[2]),
 	.XB         (clks[2]),
 	.YA         (dirs[3]),
@@ -1288,6 +1306,8 @@ sound_i2s #(
 
 wire [15:0] joy;
 wire [15:0] joy2;
+wire [31:0] cont1_joy_s;
+wire [31:0] cont2_joy_s;
 
 synch_3 #(
     .WIDTH(16)
@@ -1304,6 +1324,23 @@ synch_3 #(
     joy2,
     clk_14
 );
+
+synch_3 #(
+    .WIDTH(32)
+) cont1_joy_sync (
+    cont1_joy,
+    cont1_joy_s,
+    clk_14
+);
+
+synch_3 #(
+    .WIDTH(32)
+) cont2_joy_sync (
+    cont2_joy,
+    cont2_joy_s,
+    clk_14
+);
+
 
 wire m_service;
 assign m_service = service_mode;

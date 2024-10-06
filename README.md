@@ -67,6 +67,11 @@ Note: the `.mra` files provided are heaviliy modified from the original versions
 
 ## History
 
+v0.9.2
+* Minor control updates
+* * (RoadBlasters) Fix issues with analog controllers not working in dock
+* * (Marble Madness) Holding "Y" now boosts marble speed to the "Fast" analog sensitivity value.
+
 v0.9.1
 * Major refactoring to fix graphical bugs on newer pocekts.
 * * Added SDRAM timing constraints.
